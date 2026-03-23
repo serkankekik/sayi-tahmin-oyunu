@@ -273,6 +273,11 @@ def index():
             session['history'] = hist
             session.modified = True
             if plus == 4: game_over = True
+                # --- REKOR KAYDETME MANTIĞI (EKLEME) ---
+                current_best = session.get('best_score')
+                if current_best is None or session['attempts'] < current_best:
+                    session['best_score'] = session['attempts']
+                # --------------------------------------
 
     return render_template_string(HTML_TEMPLATE, history=session.get('history', []), 
                                 attempts=session.get('attempts', 0), 
