@@ -7,265 +7,249 @@ from datetime import datetime
 from flask import Flask, request, session, render_template_string, jsonify, redirect, url_for
 from dotenv import load_dotenv
 
-# .env dosyasını yüklüyoruz
 load_dotenv()
 
 app = Flask(__name__)
-# Güvenlik için secret_key'i .env'den alıyoruz
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'serkan_ozel_anahtar_v4')
 API_KEY = os.getenv('GEMINI_API_KEY')
 MODEL_NAME = "gemini-2.0-flash-lite"
 
-# --- KALICI VERİ SİSTEMİ (JSON) ---
 DB_FILE = os.path.join(os.path.dirname(__file__), "game_history.json")
 
-def load_game_db():
+# --- VERİ YÖNETİMİ ---
+def load_db():
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                if "games" not in data: data = {"games": {}, "high_scores": []}
+                return data
         except:
-            return {}
-    return {}
+            return {"games": {}, "high_scores": []}
+    return {"games": {}, "high_scores": []}
 
-def save_game_db(data):
+def save_db(data):
     try:
         with open(DB_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
     except Exception as e:
-        print(f"Dosya yazma hatası: {e}")
+        print(f"Yazma hatası: {e}")
 
-# --- KULLANICI ARAYÜZÜ (HTML + CSS + JS) ---
+# --- HTML TEMPLATE (GÜNCELLENDİ: İSİM FORMU VE TOP 10) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sayı Tahmin Pro - Serkan</title>
     <style>
-        :root { --primary: #6c5ce7; --bg: #f4f7fa; --text: #2d3436; --highlight: #ffeaa7; --border: #dfe6e9; --success: #2ecc71; }
+        :root { --primary: #6c5ce7; --bg: #f4f7fa; --text: #2d3436; --success: #2ecc71; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; padding: 10px; color: var(--text); }
-        .container { width: 100%; max-width: 950px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        @media (max-width: 768px) { .container { grid-template-columns: 1fr; } }
-        .card { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); position: relative; height: fit-content; }
-        .session-badge { position: absolute; top: 10px; right: 10px; font-size: 10px; background: #eee; padding: 4px 8px; border-radius: 20px; color: #777; font-weight: bold; }
-        h2, h3 { margin: 0 0 10px 0; font-size: 1.2rem; border-bottom: 2px solid var(--bg); padding-bottom: 8px; }
-        .status-bar { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin-bottom: 15px; color: #636e72; }
-        .guess-row { display: flex; justify-content: center; gap: 8px; margin: 10px 0 20px 0; }
-        .digit { width: 45px; height: 55px; font-size: 24px; text-align: center; border: 2px solid var(--border); border-radius: 8px; outline: none; transition: 0.2s; }
-        .digit:focus { border-color: var(--primary); background: #f8f7ff; }
-        .btn { border: none; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 14px; transition: 0.3s; padding: 14px; text-align: center; text-decoration: none; display: block; width: 100%; }
-        .btn-main { background: var(--primary); color: white; box-shadow: 0 4px 10px rgba(108, 92, 231, 0.2); }
-        .btn-group { display: flex; gap: 8px; margin-top: 10px; }
-        .btn-reset { background: #dfe6e9; color: #636e72; flex: 1; }
-        .table-wrap { margin-top: 20px; border-radius: 10px; border: 1px solid #eee; overflow: hidden; }
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        th { background: #f8f9fa; padding: 10px; border-bottom: 2px solid #eee; }
-        td { padding: 12px 8px; border-bottom: 1px solid #f1f1f1; text-align: center; }
-        .history-digit { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 32px; border: 1px solid var(--border); border-radius: 5px; font-weight: 600; margin: 0 1px; }
-        .match-active { background-color: var(--highlight) !important; border-color: #f1c40f !important; color: #d35400 !important; }
-        .asistan-container { display: flex; flex-direction: column; height: 420px; }
-        #chat-box { flex-grow: 1; overflow-y: auto; padding: 12px; background: #fafafa; border-radius: 12px; margin-bottom: 10px; border: 1px solid #eee; display: flex; flex-direction: column; gap: 8px; }
-        .msg { padding: 8px 12px; border-radius: 12px; font-size: 13px; max-width: 85%; word-wrap: break-word; }
-        .bot { background: var(--primary); color: white; align-self: flex-start; }
-        .user { background: #e2e8f0; color: #2d3436; align-self: flex-end; }
-        .report-msg { background: #2d3436; color: #00ff00; border: 1px solid #444; align-self: flex-start; font-family: 'Courier New', monospace; font-size: 11px;}
-        input#cin { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 10px; box-sizing: border-box; outline: none; }
-        .info-card { background: #fffbe6; border: 1px solid #ffe58f; padding: 15px; border-radius: 12px; margin-top: 15px; font-size: 13px; color: #856404; line-height: 1.5; }
+        .container { width: 100%; max-width: 1000px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 800px) { .container { grid-template-columns: 1fr; } }
+        .card { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 20px; }
+        .btn { border: none; border-radius: 10px; cursor: pointer; font-weight: 700; padding: 12px; text-align: center; text-decoration: none; display: block; width: 100%; margin-top: 10px; }
+        .btn-main { background: var(--primary); color: white; }
+        .digit-input { width: 40px; height: 50px; font-size: 20px; text-align: center; margin: 0 5px; border: 2px solid #eee; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+        th, td { padding: 8px; border-bottom: 1px solid #eee; text-align: center; }
+        .high-scores { background: #fff; border: 2px solid var(--primary); }
+        .asistan-box { height: 300px; overflow-y: auto; background: #fafafa; border-radius: 10px; padding: 10px; border: 1px solid #eee; }
+        .msg { padding: 8px; margin: 5px 0; border-radius: 8px; font-size: 12px; }
+        .bot { background: var(--primary); color: white; }
+        .user { background: #e2e8f0; align-self: flex-end; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="card">
-            <div class="session-badge">ID: {{ game_id }}</div>
-            <h2>🔢 Sayı Tahmin Oyunu</h2>
-            <div class="status-bar">
-                <span>Hamle: {{ attempts }}</span>
-                <span>Rekor: {{ best_score if best_score else '-' }}</span>
-            </div>
-            {% if game_over or surrendered %}
-                <div style="text-align:center; padding: 15px; background: #dff9fb; border-radius: 12px; font-weight:bold; margin-bottom:10px;">
-                   {% if surrendered %} 🏳️ Pes Edildi. Doğru Sayı: {{ target }} {% else %} 🎉 Tebrikler Serkan! Sayıyı buldun. {% endif %}
-                </div>
-                <a href="/reset" class="btn btn-main" style="background:var(--success);">YENİ OYUN BAŞLAT</a>
-            {% else %}
-                <div id="err" style="color:#d63031; font-size:11px; text-align:center; height:18px;"></div>
-                <form method="post">
-                    <div class="guess-row">
-                        {% for i in range(1, 5) %}
-                        <input type="number" class="digit" name="d{{i}}" id="d{{i}}" maxlength="1" oninput="liveCheck(this)" autocomplete="off">
-                        {% endfor %}
+        <div>
+            <div class="card">
+                <h2>🔢 Sayı Tahmin</h2>
+                <p>Hamle: {{ attempts }} | Kişisel Rekorun: {{ session_best if session_best else '-' }}</p>
+                
+                {% if game_over %}
+                    <div style="background:#dff9fb; padding:15px; border-radius:10px; text-align:center;">
+                        <h3>🎉 TEBRİKLER!</h3>
+                        <p>Skorun: {{ attempts }} hamle.</p>
+                        <form action="/save_score" method="POST">
+                            <input type="text" name="player_name" placeholder="İsmini Yaz" required style="padding:10px; border-radius:5px; border:1px solid #ccc; width:80%;">
+                            <button type="submit" class="btn btn-main">Rekoru Kaydet</button>
+                        </form>
                     </div>
-                    <button type="submit" id="btn" class="btn btn-main">Tahmin Gönder</button>
-                </form>
-                <div class="btn-group">
-                    <a href="/surrender" class="btn btn-reset" style="background:#ffeaa7; color:#d35400;">Sayıyı Göster</a>
-                    <a href="/reset" class="btn btn-reset">Oyunu Sıfırla</a>
-                </div>
-            {% endif %}
-            <div class="table-wrap">
+                {% elif surrendered %}
+                    <div style="background:#ffeaa7; padding:15px; border-radius:10px; text-align:center;">
+                        <p>🏳️ Pes Edildi. Sayı: {{ target }}</p>
+                        <a href="/reset" class="btn btn-main">YENİ OYUN</a>
+                    </div>
+                {% else %}
+                    <form method="post" style="text-align:center;">
+                        {% for i in range(1, 5) %}
+                        <input type="number" name="d{{i}}" class="digit-input" required maxlength="1">
+                        {% endfor %}
+                        <button type="submit" class="btn btn-main">Tahmin Et</button>
+                    </form>
+                    <div style="display:flex; gap:10px;">
+                        <a href="/surrender" class="btn" style="background:#fab1a0;">Sayıyı Gör</a>
+                        <a href="/reset" class="btn" style="background:#dfe6e9;">Sıfırla</a>
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="card">
+                <h3>🏆 TOP 10 LİSTESİ</h3>
                 <table>
-                    <thead><tr><th>#</th><th>Tahmin</th><th>+ Yer</th><th>Doğru</th></tr></thead>
+                    <thead><tr><th>Sıra</th><th>İsim</th><th>Hamle</th><th>Tarih</th></tr></thead>
                     <tbody>
-                        {% for item in history %}
-                        <tr>
-                            <td>{{ item.no }}</td>
-                            <td>
-                                {% for char in item.guess %}<span class="history-digit" data-val="{{ char }}">{{ char }}</span>{% endfor %}
-                            </td>
-                            <td style="color:var(--success)"><b>{{ item.correct_place }}</b></td>
-                            <td><b>{{ item.total_correct }}</b></td>
+                        {% for hs in high_scores %}
+                        <tr {% if loop.index == 1 %}style="background:#fff9c4"{% endif %}>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ hs.name }}</td>
+                            <td><b>{{ hs.score }}</b></td>
+                            <td style="font-size:10px;">{{ hs.date }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
-        <div class="asistan-section">
-            <div class="card asistan-container">
-                <h3>🤖 Oyun Asistanı</h3>
-                <div id="chat-box"></div>
-                <input type="text" id="cin" placeholder="Asistana sor (veya 'kontrol et')...">
+
+        <div>
+            <div class="card">
+                <h3>🤖 Asistan</h3>
+                <div id="chat-box" class="asistan-box"></div>
+                <input type="text" id="cin" placeholder="Mesaj yaz..." style="width:100%; padding:10px; margin-top:10px; box-sizing:border-box;">
             </div>
-            <div class="info-card">
-                <b>Nasıl Oynanır?</b><br>
-                1. Bilgisayar 4 basamaklı, rakamları birbirinden farklı bir sayı tutar.<br>
-                2. <b>+ Yer:</b> Hem rakam hem de konumu doğru olanlar.<br>
-                3. <b>Doğru:</b> Sayıda var olan ama yeri yanlış olan rakamlar.<br>
-                4. Hedef 4+ yer sonucuna ulaşmaktır.
+            
+            <div class="card">
+                <h3>📜 Hamle Geçmişi</h3>
+                <table>
+                    <thead><tr><th>#</th><th>Tahmin</th><th>+Yer</th><th>Doğru</th></tr></thead>
+                    <tbody>
+                        {% for h in history %}
+                        <tr><td>{{ h.no }}</td><td>{{ h.guess }}</td><td>{{ h.correct_place }}</td><td>{{ h.total_correct }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
+
     <script>
-        const ins = document.querySelectorAll('.digit');
-        const btn = document.getElementById('btn');
-        function liveCheck(el) {
-            if (el.value.length > 1) el.value = el.value.slice(0, 1);
-            if (el.value !== "" && el.nextElementSibling) el.nextElementSibling.focus();
-            const currentInputs = Array.from(ins).map(i => i.value).filter(v => v !== "");
-            document.querySelectorAll('.history-digit').forEach(span => {
-                span.classList.toggle('match-active', currentInputs.includes(span.getAttribute('data-val')));
-            });
-            let dup = new Set(currentInputs).size !== currentInputs.length;
-            document.getElementById('err').innerText = dup ? "Rakamlar eşsiz olmalı!" : "";
-            btn.disabled = (dup || currentInputs.length < 4);
-        }
-        ins.forEach((i, idx) => {
-            i.addEventListener('keydown', (e) => {
-                if (e.key === 'Backspace' && i.value === "" && idx > 0) {
-                    ins[idx - 1].focus();
-                }
-            });
-        });
         const cb = document.getElementById('chat-box');
         async function ask(m) {
-            try {
-                const r = await fetch('/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({msg:m})});
-                const d = await r.json();
-                const styleClass = d.is_secret ? 'report-msg' : 'bot';
-                cb.innerHTML += `<div class="msg ${styleClass}">${d.response}</div>`;
-                cb.scrollTop = cb.scrollHeight;
-            } catch(e) { cb.innerHTML += `<div class="msg bot">Şu an strateji geliştiriyorum...</div>`; }
+            cb.innerHTML += `<div class="msg user">${m}</div>`;
+            const r = await fetch('/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({msg:m})});
+            const d = await r.json();
+            cb.innerHTML += `<div class="msg bot">${d.response}</div>`;
+            cb.scrollTop = cb.scrollHeight;
         }
         document.getElementById('cin').onkeypress = (e) => {
-            if(e.key === 'Enter' && e.target.value.trim() !== "") {
-                cb.innerHTML += `<div class="msg user">${e.target.value}</div>`;
-                ask(e.target.value); e.target.value = '';
-                cb.scrollTop = cb.scrollHeight;
-            }
+            if(e.key === 'Enter') { ask(e.target.value); e.target.value = ''; }
         };
     </script>
 </body>
 </html>
 """
 
-# --- ADMİN PANELİ ŞABLONU ---
+# --- ADMIN PANELİ (GÜNCELLENDİ: IP VE İSİM) ---
 ADMIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
-<head><title>Admin Takip</title><style>body{font-family:sans-serif; background:#f0f2f5; padding:20px;} .g-card{background:white; padding:15px; margin-bottom:15px; border-radius:12px; box-shadow:0 2px 5px rgba(0,0,0,0.1); border-left:6px solid #6c5ce7;}</style></head>
+<head><title>Admin</title><style>body{font-family:sans-serif; padding:20px;} .g-card{border:1px solid #ccc; padding:10px; margin-bottom:10px; border-left:5px solid #6c5ce7;}</style></head>
 <body>
-    <h2>🕵️‍♂️ serkankekik Canlı Takip Paneli</h2>
-    {% for gid, data in recent_games %}
+    <h2>🕵️‍♂️ Canlı Takip</h2>
+    {% for gid, data in games %}
     <div class="g-card">
-        <div style="display:flex; justify-content:space-between; border-bottom:1px solid #eee; padding-bottom:8px; margin-bottom:10px;">
-            <b>Oturum: {{ gid }}</b>
-            <span>Başlangıç: {{ data.start_time }}</span>
-        </div>
-        <div style="font-size:18px; margin-bottom:10px;">Hedef: <b style="color:#d63031">{{ data.target_number }}</b></div>
-        <div>
-            <b>Hamleler:</b><br>
-            {% for h in data.attempts %}
-                <code style="background:#f8f9fa; padding:2px 5px; margin:2px; display:inline-block; border-radius:4px;">
-                    {{ h.guess }} (+{{ h.plus }}, {{ h.total }})
-                </code>
-            {% endfor %}
-        </div>
+        <b>ID: {{ gid }}</b> | <b>İsim: {{ data.player_name if data.player_name else 'Anonim' }}</b><br>
+        IP: <small>{{ data.ip }}</small> | Başlama: {{ data.start_time }}<br>
+        Hedef: <b>{{ data.target_number }}</b> | Hamleler: {{ data.attempts|length }}
     </div>
     {% endfor %}
-    {% if not recent_games %} <p>Henüz aktif oyun verisi yok.</p> {% endif %}
 </body>
 </html>
 """
 
-def generate_number():
-    return ''.join(random.sample('0123456789', 4))
-
-MASK_PHRASES = ["Verileri analiz ediyorum...", "Stratejik hamle düşünülüyor...", "Algoritmalar çalışıyor..."]
-
-# --- YOLLAR (ROUTES) ---
+# --- ROUTES ---
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    db_data = load_db()
     if 'game_id' not in session:
         session['game_id'] = uuid.uuid4().hex[:6].upper()
-        session['number'] = generate_number()
+        session['number'] = ''.join(random.sample('0123456789', 4))
         session['attempts'] = 0
         session['history'] = []
+        session['game_over'] = False
         session['surrendered'] = False
-        session.modified = True
+        
+        # Admin için ilk kaydı oluştur
+        db_data["games"][session['game_id']] = {
+            "target_number": session['number'],
+            "attempts": [],
+            "start_time": datetime.now().strftime("%H:%M:%S"),
+            "ip": request.remote_addr,
+            "player_name": ""
+        }
+        save_db(db_data)
 
-    gid = session.get('game_id')
-    game_over = False
-
-    if request.method == 'POST':
+    game_over = session.get('game_over', False)
+    if request.method == 'POST' and not game_over:
         guess = "".join([request.form.get(f'd{i}', '') for i in range(1,5)])
-        if len(guess) == 4 and len(set(guess)) == 4:
-            db = load_game_db()
-            if gid not in db:
-                db[gid] = {'target_number': session['number'], 'attempts': [], 'start_time': datetime.now().strftime("%H:%M:%S")}
-
+        if len(guess) == 4:
             session['attempts'] += 1
             num = session['number']
             plus = sum(1 for a, b in zip(guess, num) if a == b)
             total = sum(1 for d in set(guess) if d in num)
-
-            db[gid]['attempts'].append({'guess': guess, 'plus': plus, 'total': total})
-            save_game_db(db)
-
-            hist = session.get('history', [])
-            hist.insert(0, {"no": session['attempts'], "guess": guess, "total_correct": total, "correct_place": plus})
-            session['history'] = hist
             
-            if plus == 4:
-                game_over = True
-                current_best = session.get('best_score')
-                if current_best is None or session['attempts'] < current_best:
-                    session['best_score'] = session['attempts']
+            session['history'].insert(0, {"no": session['attempts'], "guess": guess, "total_correct": total, "correct_place": plus})
             
+            # DB Güncelle
+            db_data = load_db()
+            db_data["games"][session['game_id']]["attempts"].append(guess)
+            save_db(db_data)
+            
+            if plus == 4: session['game_over'] = True
             session.modified = True
 
-    return render_template_string(HTML_TEMPLATE, history=session.get('history', []),
-                                attempts=session.get('attempts', 0),
-                                game_over=game_over, target=session.get('number'), game_id=gid,
-                                best_score=session.get('best_score'), surrendered=session.get('surrendered', False))
+    return render_template_string(HTML_TEMPLATE, 
+                                history=session['history'], 
+                                attempts=session['attempts'],
+                                game_over=session.get('game_over'),
+                                target=session['number'],
+                                high_scores=db_data["high_scores"][:10],
+                                session_best=session.get('best_score'),
+                                surrendered=session.get('surrendered'))
+
+@app.route('/save_score', methods=['POST'])
+def save_score():
+    name = request.form.get('player_name', 'Adsız')
+    score = session.get('attempts', 99)
+    
+    db_data = load_db()
+    # Top 10 Güncelleme
+    db_data["high_scores"].append({
+        "name": name, 
+        "score": score, 
+        "date": datetime.now().strftime("%d/%m %H:%M"),
+        "ip": request.remote_addr
+    })
+    # Küçükten büyüğe sırala
+    db_data["high_scores"] = sorted(db_data["high_scores"], key=lambda x: x['score'])[:10]
+    
+    # Admin verisindeki ismi güncelle
+    if session['game_id'] in db_data["games"]:
+        db_data["games"][session['game_id']]["player_name"] = name
+        
+    save_db(db_data)
+    
+    session['best_score'] = score
+    return redirect(url_for('reset'))
 
 @app.route('/serkank')
 def admin_panel():
-    db = load_game_db()
-    active_games = {k: v for k, v in db.items() if len(v['attempts']) > 0}
-    sorted_games = sorted(active_games.items(), key=lambda x: x[1]['start_time'], reverse=True)[:20]
-    return render_template_string(ADMIN_TEMPLATE, recent_games=sorted_games)
+    db_data = load_db()
+    sorted_games = sorted(db_data["games"].items(), key=lambda x: x[1]['start_time'], reverse=True)[:30]
+    return render_template_string(ADMIN_TEMPLATE, games=sorted_games)
 
 @app.route('/reset')
 def reset():
@@ -281,26 +265,30 @@ def surrender():
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    user_msg = request.json.get('msg', '').strip().lower()
+    user_msg = request.json.get('msg', '').lower()
     target = session.get('number', '????')
-    if user_msg == "kontrol et":
+    
+    # Gemini Bağlantı Testi
+    if "kontrol et" in user_msg:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={API_KEY}"
         try:
-            r = requests.post(url, json={"contents": [{"parts": [{"text": "ping"}]}]}, timeout=5)
+            r = requests.post(url, json={"contents": [{"parts": [{"text": "Sana bağlanabiliyor muyum? Sadece 'Evet' de."}]}]}, timeout=5)
             if r.status_code == 200:
-                return jsonify({"response": f"[OK] Gemini Bağlı. ID: {session.get('game_id')}", "is_secret": True})
-        except:
-            pass
-        return jsonify({"response": "[HATA] Erişim yok.", "is_secret": True})
+                return jsonify({"response": "✅ Gemini Bağlantısı Aktif. Serkan, seni duyuyorum!"})
+        except: pass
+        return jsonify({"response": "❌ Bağlantı Hatası! API anahtarını kontrol et."})
 
+    # Normal Chat
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={API_KEY}"
+    payload = {
+        "contents": [{"parts": [{"text": f"Sen bir sayı tahmin oyunu asistanısın. Serkan isimli oyuncuya yardım ediyorsun. Hedef sayı: {target}. Şu anki hamle sayısı: {session.get('attempts')}. Çok kısa ve esprili bir yorum yap."}]}]
+    }
     try:
-        r = requests.post(url, json={"contents": [{"parts": [{"text": f"Oyun asistanısın. Hedef: {target}. Kısa cevap ver."}]}]}, timeout=5)
-        if r.status_code == 200:
-            return jsonify({"response": r.json()['candidates'][0]['content']['parts'][0]['text'], "is_secret": False})
+        r = requests.post(url, json=payload, timeout=5)
+        res = r.json()['candidates'][0]['content']['parts'][0]['text']
+        return jsonify({"response": res})
     except:
-        pass
-    return jsonify({"response": random.choice(MASK_PHRASES), "is_secret": False})
+        return jsonify({"response": "Düşünüyorum... (Bağlantıda küçük bir sorun var)"})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=True, port=5001)
