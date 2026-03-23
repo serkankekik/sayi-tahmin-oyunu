@@ -17,7 +17,6 @@ API_KEY = os.getenv('GEMINI_API_KEY')
 MODEL_NAME = "gemini-2.0-flash-lite"
 
 # --- KALICI VERİ SİSTEMİ (JSON) ---
-# PythonAnywhere'de verilerin silinmemesi için dosyaya kaydediyoruz.
 DB_FILE = os.path.join(os.path.dirname(__file__), "game_history.json")
 
 def load_game_db():
@@ -49,30 +48,23 @@ HTML_TEMPLATE = """
         body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; padding: 10px; color: var(--text); }
         .container { width: 100%; max-width: 950px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         @media (max-width: 768px) { .container { grid-template-columns: 1fr; } }
-        
         .card { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); position: relative; height: fit-content; }
         .session-badge { position: absolute; top: 10px; right: 10px; font-size: 10px; background: #eee; padding: 4px 8px; border-radius: 20px; color: #777; font-weight: bold; }
         h2, h3 { margin: 0 0 10px 0; font-size: 1.2rem; border-bottom: 2px solid var(--bg); padding-bottom: 8px; }
-        
         .status-bar { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin-bottom: 15px; color: #636e72; }
-        
         .guess-row { display: flex; justify-content: center; gap: 8px; margin: 10px 0 20px 0; }
         .digit { width: 45px; height: 55px; font-size: 24px; text-align: center; border: 2px solid var(--border); border-radius: 8px; outline: none; transition: 0.2s; }
         .digit:focus { border-color: var(--primary); background: #f8f7ff; }
-        
         .btn { border: none; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 14px; transition: 0.3s; padding: 14px; text-align: center; text-decoration: none; display: block; width: 100%; }
         .btn-main { background: var(--primary); color: white; box-shadow: 0 4px 10px rgba(108, 92, 231, 0.2); }
         .btn-group { display: flex; gap: 8px; margin-top: 10px; }
         .btn-reset { background: #dfe6e9; color: #636e72; flex: 1; }
-        
         .table-wrap { margin-top: 20px; border-radius: 10px; border: 1px solid #eee; overflow: hidden; }
         table { width: 100%; border-collapse: collapse; font-size: 14px; }
         th { background: #f8f9fa; padding: 10px; border-bottom: 2px solid #eee; }
         td { padding: 12px 8px; border-bottom: 1px solid #f1f1f1; text-align: center; }
-        
         .history-digit { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 32px; border: 1px solid var(--border); border-radius: 5px; font-weight: 600; margin: 0 1px; }
         .match-active { background-color: var(--highlight) !important; border-color: #f1c40f !important; color: #d35400 !important; }
-
         .asistan-container { display: flex; flex-direction: column; height: 420px; }
         #chat-box { flex-grow: 1; overflow-y: auto; padding: 12px; background: #fafafa; border-radius: 12px; margin-bottom: 10px; border: 1px solid #eee; display: flex; flex-direction: column; gap: 8px; }
         .msg { padding: 8px 12px; border-radius: 12px; font-size: 13px; max-width: 85%; word-wrap: break-word; }
@@ -80,7 +72,6 @@ HTML_TEMPLATE = """
         .user { background: #e2e8f0; color: #2d3436; align-self: flex-end; }
         .report-msg { background: #2d3436; color: #00ff00; border: 1px solid #444; align-self: flex-start; font-family: 'Courier New', monospace; font-size: 11px;}
         input#cin { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 10px; box-sizing: border-box; outline: none; }
-
         .info-card { background: #fffbe6; border: 1px solid #ffe58f; padding: 15px; border-radius: 12px; margin-top: 15px; font-size: 13px; color: #856404; line-height: 1.5; }
     </style>
 </head>
@@ -93,7 +84,6 @@ HTML_TEMPLATE = """
                 <span>Hamle: {{ attempts }}</span>
                 <span>Rekor: {{ best_score if best_score else '-' }}</span>
             </div>
-
             {% if game_over or surrendered %}
                 <div style="text-align:center; padding: 15px; background: #dff9fb; border-radius: 12px; font-weight:bold; margin-bottom:10px;">
                    {% if surrendered %} 🏳️ Pes Edildi. Doğru Sayı: {{ target }} {% else %} 🎉 Tebrikler Serkan! Sayıyı buldun. {% endif %}
@@ -114,7 +104,6 @@ HTML_TEMPLATE = """
                     <a href="/reset" class="btn btn-reset">Oyunu Sıfırla</a>
                 </div>
             {% endif %}
-
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>#</th><th>Tahmin</th><th>+ Yer</th><th>Doğru</th></tr></thead>
@@ -133,14 +122,12 @@ HTML_TEMPLATE = """
                 </table>
             </div>
         </div>
-
         <div class="asistan-section">
             <div class="card asistan-container">
                 <h3>🤖 Oyun Asistanı</h3>
                 <div id="chat-box"></div>
                 <input type="text" id="cin" placeholder="Asistana sor (veya 'kontrol et')...">
             </div>
-
             <div class="info-card">
                 <b>Nasıl Oynanır?</b><br>
                 1. Bilgisayar 4 basamaklı, rakamları birbirinden farklı bir sayı tutar.<br>
@@ -150,11 +137,9 @@ HTML_TEMPLATE = """
             </div>
         </div>
     </div>
-
     <script>
         const ins = document.querySelectorAll('.digit');
         const btn = document.getElementById('btn');
-
         function liveCheck(el) {
             if (el.value.length > 1) el.value = el.value.slice(0, 1);
             if (el.value !== "" && el.nextElementSibling) el.nextElementSibling.focus();
@@ -166,7 +151,6 @@ HTML_TEMPLATE = """
             document.getElementById('err').innerText = dup ? "Rakamlar eşsiz olmalı!" : "";
             btn.disabled = (dup || currentInputs.length < 4);
         }
-
         ins.forEach((i, idx) => {
             i.addEventListener('keydown', (e) => {
                 if (e.key === 'Backspace' && i.value === "" && idx > 0) {
@@ -174,7 +158,6 @@ HTML_TEMPLATE = """
                 }
             });
         });
-
         const cb = document.getElementById('chat-box');
         async function ask(m) {
             try {
@@ -226,16 +209,10 @@ ADMIN_TEMPLATE = """
 </html>
 """
 
-# --- YARDIMCI FONKSİYONLAR ---
 def generate_number():
     return ''.join(random.sample('0123456789', 4))
 
-MASK_PHRASES = [
-    "Verileri analiz ediyorum, bir saniye...",
-    "Stratejik bir hamle. Üzerinde düşünüyorum.",
-    "Algoritmalarım bunu beğendi.",
-    "Şu an çok derin bir veri setine odaklandım."
-]
+MASK_PHRASES = ["Verileri analiz ediyorum...", "Stratejik hamle düşünülüyor...", "Algoritmalar çalışıyor..."]
 
 # --- YOLLAR (ROUTES) ---
 @app.route('/', methods=['GET', 'POST'])
@@ -247,47 +224,45 @@ def index():
         session['history'] = []
         session['surrendered'] = False
         session.modified = True
-    
+
     gid = session.get('game_id')
     game_over = False
-    
+
     if request.method == 'POST':
         guess = "".join([request.form.get(f'd{i}', '') for i in range(1,5)])
         if len(guess) == 4 and len(set(guess)) == 4:
-            # DB YÜKLE VE GÜNCELLE
             db = load_game_db()
             if gid not in db:
                 db[gid] = {'target_number': session['number'], 'attempts': [], 'start_time': datetime.now().strftime("%H:%M:%S")}
-            
+
             session['attempts'] += 1
             num = session['number']
             plus = sum(1 for a, b in zip(guess, num) if a == b)
             total = sum(1 for d in set(guess) if d in num)
-            
-            # DB'ye hamleyi kaydet ve dosyaya yaz
+
             db[gid]['attempts'].append({'guess': guess, 'plus': plus, 'total': total})
             save_game_db(db)
-            
+
             hist = session.get('history', [])
             hist.insert(0, {"no": session['attempts'], "guess": guess, "total_correct": total, "correct_place": plus})
             session['history'] = hist
-            session.modified = True
-            if plus == 4: game_over = True
-                # --- REKOR KAYDETME MANTIĞI (EKLEME) ---
+            
+            if plus == 4:
+                game_over = True
                 current_best = session.get('best_score')
                 if current_best is None or session['attempts'] < current_best:
                     session['best_score'] = session['attempts']
-                # --------------------------------------
+            
+            session.modified = True
 
-    return render_template_string(HTML_TEMPLATE, history=session.get('history', []), 
-                                attempts=session.get('attempts', 0), 
+    return render_template_string(HTML_TEMPLATE, history=session.get('history', []),
+                                attempts=session.get('attempts', 0),
                                 game_over=game_over, target=session.get('number'), game_id=gid,
                                 best_score=session.get('best_score'), surrendered=session.get('surrendered', False))
 
 @app.route('/serkank')
 def admin_panel():
     db = load_game_db()
-    # Sadece hamlesi olan oyunları listele
     active_games = {k: v for k, v in db.items() if len(v['attempts']) > 0}
     sorted_games = sorted(active_games.items(), key=lambda x: x[1]['start_time'], reverse=True)[:20]
     return render_template_string(ADMIN_TEMPLATE, recent_games=sorted_games)
@@ -308,27 +283,24 @@ def surrender():
 def chat():
     user_msg = request.json.get('msg', '').strip().lower()
     target = session.get('number', '????')
-    
     if user_msg == "kontrol et":
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={API_KEY}"
         try:
             r = requests.post(url, json={"contents": [{"parts": [{"text": "ping"}]}]}, timeout=5)
             if r.status_code == 200:
                 return jsonify({"response": f"[OK] Gemini Bağlı. ID: {session.get('game_id')}", "is_secret": True})
-            else:
-                return jsonify({"response": f"[HATA] {r.status_code}", "is_secret": True})
         except:
-            return jsonify({"response": "[KOPUK] Erişim yok.", "is_secret": True})
+            pass
+        return jsonify({"response": "[HATA] Erişim yok.", "is_secret": True})
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={API_KEY}"
     try:
-        r = requests.post(url, json={"contents": [{"parts": [{"text": f"Oyun asistanısın. Serkan ile sayı tahmin oyunu oynuyorsun. Hedef: {target}. Çok kısa cevap ver."}]}]}, timeout=5)
+        r = requests.post(url, json={"contents": [{"parts": [{"text": f"Oyun asistanısın. Hedef: {target}. Kısa cevap ver."}]}]}, timeout=5)
         if r.status_code == 200:
             return jsonify({"response": r.json()['candidates'][0]['content']['parts'][0]['text'], "is_secret": False})
-        else:
-            return jsonify({"response": random.choice(MASK_PHRASES), "is_secret": False})
     except:
-        return jsonify({"response": random.choice(MASK_PHRASES), "is_secret": False})
+        pass
+    return jsonify({"response": random.choice(MASK_PHRASES), "is_secret": False})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=True, port=5001)
